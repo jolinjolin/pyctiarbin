@@ -69,9 +69,11 @@ pip install .
 
 - `ChannelInterface` : A channel-level interface for reading status of a specific channel, starting/stopping tests on that channel, and assigning meta variables during active tests on the channel. This class is capable of read and write operations on a single channel.
 
+- `ChannelsInterface` : An all-channels-level interface for reading statuses of all channels. This class is capable of read only operations on all channels.
+
 ### Configuration
 
-Both `CyclerInterface` and `ChannelInterface` require configuration dictionaries upon initialization. The fields of these configuration dictionaries are detailed in the following sections.
+`CyclerInterface`, `ChannelInterface` and `ChannelsInterface` require configuration dictionaries upon initialization. The fields of these configuration dictionaries are detailed in the following sections.
 
 #### CyclerInterface Configuration
 
@@ -79,7 +81,7 @@ An example `CyclerInterface` configuration dictionary is shown below:
 
 ```python
 CYCLER_INTERFACE_CONFIG = {
-    "ip_address": 127.0.0.1,
+    "ip_address": "127.0.0.1",
     "port": 1234,
     "timeout_s": 3,
     "msg_buffer_size": 4096
@@ -107,7 +109,7 @@ CHANNEL_INTERFACE_CONFIG = {
   "channel": 1,
   "test_name": "fake_test_name",
   "schedule_name": "Rest+207855.sdx",
-  "ip_address": 127.0.0.1,
+  "ip_address": "127.0.0.1",
   "port": 1234,
   "timeout_s": 3,
   "msg_buffer_size": 4096
@@ -126,6 +128,31 @@ Where the fields are as follows:
     The IP address of the Arbin host computer.
 - `port` : int
     The TCP port to communicate through. This is generally going to be 7031
+- `timeout_s` : *optional* : float
+    How long to wait before timing out on TCP communication. Defaults to 3 seconds.
+- `msg_buffer_size` : *optional* : int
+    How big of a message buffer to use for sending/receiving messages.
+    A minimum of 1024 bytes is recommended. Defaults to 4096 bytes.
+
+#### ChannelsInterface Configuration
+
+An example `ChannelsInterface` configuration dictionary is shown below:
+
+```python
+CHANNELS_INTERFACE_CONFIG = {
+    "ip_address": "127.0.0.1",
+    "port": 1234,
+    "timeout_s": 3,
+    "msg_buffer_size": 4096
+}
+```
+
+Where the fields are as follows:
+
+- `ip_address` : str
+    The IP address of the Arbin host computer.
+- `port` : int
+    The TCP port to communicate through. This is generally going to be 9031
 - `timeout_s` : *optional* : float
     How long to wait before timing out on TCP communication. Defaults to 3 seconds.
 - `msg_buffer_size` : *optional* : int
@@ -180,6 +207,22 @@ CHANNEL_INTERFACE_CONFIG = {
 
 channel_interface = ChannelInterface(CHANNEL_INTERFACE_CONFIG)
 channel_interface.read_channel_status()
+```
+
+For a `ChannelsInterface` there is no need to specify the channel since it is already defined to retrieve information for all channels:
+
+```python
+from pyctiarbin import ChannelsInterface
+
+CHANNELS_INTERFACE_CONFIG = {
+    "ip_address": "127.0.0.1"
+    "port": 1234,
+    "timeout_s": 3,
+    "msg_buffer_size": 4096
+}
+
+channels_interface = ChannelsInterface(CHANNELS_INTERFACE_CONFIG)
+channels_interface.read_channel_status()
 ```
 
 For more examples of how to use the `CyclerInterface` and `ChannelInterface` class see the `demo_notebook.ipynb` and documentation.
