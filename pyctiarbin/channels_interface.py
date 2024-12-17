@@ -45,7 +45,7 @@ class ChannelsInterface(CyclerInterface):
         """
         self.__config = ChannelsInterfaceConfig(**config)
         super().__init__(self.__config.model_dump(), env_path)
-        self.channel = 0
+        self.__channel = 0
 
     def read_channel_status(self) -> dict:
         """
@@ -64,14 +64,14 @@ class ChannelsInterface(CyclerInterface):
         channel_common_info_msg_rd_dict = {}
         channel_info_msg_rx_dicts = []
 
-        if (self.channel != 0):
+        if (self.__channel != 0):
             logger.error(f'Channel must be 0!')
             return channel_common_info_msg_rd_dict, channel_info_msg_rx_dicts
 
         try:
             # Subtract one from the channel value to account for zero indexing
             channel_info_msg_tx = Msg.ChannelsCommonInfo.Client.pack(
-                {'channel': (self.channel - 1)})
+                {'channel': (self.__channel - 1)})
             response_msg_bin = self._send_receive_msg(
                 channel_info_msg_tx)
 
