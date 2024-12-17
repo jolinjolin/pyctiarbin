@@ -63,7 +63,7 @@ class MessageABC(ABC):
 
         # Create a template to unpack message with
         template = {**deepcopy(cls.base_template),
-                   **deepcopy(cls.msg_specific_template)}
+                    **deepcopy(cls.msg_specific_template)}
 
         for item_name, item in template.items():
             start_idx = item['start_byte']
@@ -92,6 +92,60 @@ class MessageABC(ABC):
         return decoded_msg_dict
 
     @classmethod
+    def unpackByTemplates(cls, msg_bin: bytearray, template_list: list) -> dict:
+        """
+        Parses the passed message and decodes it with the msg_encoding dict.
+        Each key in the output message will have name of the key from the 
+        msg_encoding dictionary.
+
+        Parameters
+        ----------
+        msg_bin : bytearry
+            The message to unpack.
+        template_list: list
+            The list of templates based on the needs.
+            e.g. a list of base_template and msg_specific_template or a list of msg_specific_template.
+
+        Returns
+        -------
+        decoded_msg_dict : dict
+            The message items decoded into a dictionary.
+        """
+        decoded_msg_dict = {}
+
+        # Create a template to unpack message with
+        template = {}
+        for template_item in template_list:
+            template.update(deepcopy(template_item))
+
+        for item_name, item in template.items():
+            start_idx = item['start_byte']
+            end_idx = item['start_byte'] + struct.calcsize(item['format'])
+            decoded_msg_dict[item_name] = struct.unpack(
+                item['format'], msg_bin[start_idx:end_idx])[0]
+
+            # Decode and strip trailing 0x00s from strings.
+            if item['format'].endswith('s'):
+                # ignore utf-8 characters that cannot be decoded
+                if item['text_encoding'] == 'utf-8':
+                    decoded_msg_dict[item_name] = decoded_msg_dict[item_name].decode(
+                        item['text_encoding'], errors='ignore').rstrip('\x00')
+                else:
+                    decoded_msg_dict[item_name] = decoded_msg_dict[item_name].decode(
+                        item['text_encoding']).rstrip('\x00')
+
+        if 'command_code' in decoded_msg_dict and decoded_msg_dict['command_code'] != cls.command_code:
+            logger.warning(
+                f'Decoded command code {decoded_msg_dict["command_code"]} does not match what was expected!')
+
+        # Assert that the obtained msg length matches the length of msg_bin
+        if 'msg_length' in decoded_msg_dict and decoded_msg_dict['msg_length'] != len(msg_bin):
+            logger.warning(
+                f'Decoded message length {decoded_msg_dict["msg_length"]} does not match what was expected!')
+
+        return decoded_msg_dict
+
+    @classmethod
     def pack(cls, msg_values={}) -> bytearray:
         """
         Packs a message based on the message encoding given in the msg_specific_template
@@ -111,7 +165,7 @@ class MessageABC(ABC):
         """
         # Create a template to build messages from
         template = {**deepcopy(cls.base_template),
-                   **deepcopy(cls.msg_specific_template)}
+                    **deepcopy(cls.msg_specific_template)}
 
         # Update the template with message specific length and command code
         template['msg_length']['value'] = cls.msg_length
@@ -642,6 +696,477 @@ class Msg:
 
             @classmethod
             def aux_readings_parser(cls, msg_dict: dict, msg_bin: bytearray, starting_aux_idx=1777):
+                """
+                Parses the auxiliary readings in msg_bin based on the aux readings
+                counts in msg_dict. Aux readings are then added as items to the msg_dict. 
+
+                Parameters
+                ----------
+                msg_dict : dict
+                    A dictionary containing the aux readings counts (aux_voltage_count, aux_voltage_count, etc)
+                msg_bin : bytearray
+                    The message to unpack as a byte array.
+                starting_aux_idx : int
+                    The starting index in the msg_bin for aux readings. 1777 in single channel messages
+
+                Returns
+                -------
+                msg_dict : dict
+                    The message with items decoded into a dictionary
+                """
+                aux_lists = []
+
+                aux_count_name_list = [
+                    'aux_voltage_count',
+                    'aux_temperature_count',
+                    'aux_pressure_count',
+                    'aux_external_count',
+                    'aux_flow_count',
+                    'aux_ao_count',
+                    'aux_di_count',
+                    'aux_do_count',
+                    'aux_humidity_count',
+                    'aux_safety_count',
+                    'aux_ph_count',
+                    'aux_density_count'
+                ]
+
+                # Generate a list of readings for each aux reading.
+                # If count is non-zero then genreate a aux_reading and aux_reading_dt list of that length
+                # Else, generate empty lists for the aux_reading and aux_reading_dt
+                for aux_count_name in aux_count_name_list:
+                    aux_reading_name = re.split('_count', aux_count_name)[0]
+                    aux_dt_name = aux_reading_name + '_dt'
+                    if msg_dict[aux_count_name]:
+                        msg_dict[aux_reading_name] = [0 for x in range(
+                            msg_dict[aux_count_name])]
+                        msg_dict[aux_dt_name] = [0 for x in range(
+                            msg_dict[aux_count_name])]
+                        aux_lists.append(
+                            [msg_dict[aux_reading_name], msg_dict[aux_dt_name]])
+                    else:
+                        msg_dict[aux_reading_name] = []
+                        msg_dict[aux_dt_name] = []
+
+                # For aux readings that have a measurements, add them to the respective reading list.
+                current_aux_idx = starting_aux_idx
+                for readings_list in aux_lists:
+                    for i in range(0, len(readings_list[0])):
+                        # The first list in reading list is reading itself
+                        readings_list[0][i] = struct.unpack(
+                            '<f', msg_bin[current_aux_idx:current_aux_idx+4])[0]
+                        # The second reading in the list is the dt value.
+                        readings_list[1][i] = struct.unpack(
+                            '<f', msg_bin[current_aux_idx+4:current_aux_idx+8])[0]
+                        current_aux_idx += 8
+
+                return msg_dict
+
+    class ChannelsCommonInfo:
+        '''
+        Message for getting the info of all channels from cycler.
+        ChannelsCommonInfo is used along with ChannelsInfo.
+        Unpack info that is common for all channels in the Server class.
+        See THIRD_PARTY_GET_CHANNELS_INFO/THIRD_PARTY_GET_CHANNELS_INFO_FEEDBACK 
+        in Arbin docs for more info.
+        '''
+        class Client(MessageABC):
+            msg_length = 50
+            command_code = 0xEEAB0003
+
+            msg_specific_template = {
+                'channel': {
+                    'format': '<h',
+                    'start_byte': 20,
+                    'value': 0
+                },
+                'channel_selection': {
+                    'format': '<h',
+                    'start_byte': 22,
+                    'value': 1
+                },
+                'aux_options': {
+                    'format': '<I',
+                    'start_byte': 24,
+                    'value': 0x00
+                },
+                'reserved': {
+                    'format': '32s',
+                    'start_byte': 28,
+                    'value': ''.join(['\0' for i in range(32)]),
+                    'text_encoding': 'utf-8',
+                },
+            }
+
+        class Server(MessageABC):
+
+            # Default message length for info that is common for all channels.
+            msg_length = 24
+            command_code = 0xEEBA0003
+
+            msg_specific_template = {
+                'number_of_channels': {
+                    'format': '<I',
+                    'start_byte': 20,
+                    'value': 1
+                },
+            }
+
+            @classmethod
+            def unpack(cls, msg_bin: bytearray) -> dict:
+                """
+                Same as the parent method.
+
+                Parameters
+                ----------
+                msg_bin : bytearry
+                    The message to unpack.
+
+                Returns
+                -------
+                msg_dict : dict
+                    The message with items decoded into a dictionary
+                """
+
+                msg_dict = super().unpackByTemplates(
+                    msg_bin, [cls.base_template, cls.msg_specific_template])
+                return msg_dict
+
+            @classmethod
+            def pack(cls, msg_values={}) -> bytearray:
+                """
+                Same as parent method.
+
+                Parameters
+                ----------
+                msg_values : dict
+                    A dictionary detailing which default values in the message temple should be 
+                    updated.
+
+                Returns
+                -------
+                msg : bytearray
+                    Packed response message.
+                """
+                # TODO : Modify so that we can aux values can be packed.
+                msg_bin = super().pack(msg_values)
+                return msg_bin
+
+    class ChannelsInfo:
+        '''
+        Message for getting info of all channels from cycler.
+        ChannelsCommonInfo is used along with ChannelsInfo, thus we don't
+        nedd Client or pack for Server in ChannelsInfo.
+        See THIRD_PARTY_GET_CHANNELS_INFO/THIRD_PARTY_GET_CHANNELS_INFO_FEEDBACK 
+        in Arbin docs for more info.
+        '''
+        class Client(MessageABC):
+            pass
+
+        class Server(MessageABC):
+
+            # Default message length for 1 channel with no aux readings. Will be larger as those grow.
+            msg_length = 1753
+            command_code = 0xEEBA0003
+
+            msg_specific_template = {
+                'channel': {
+                    'format': '<I',
+                    'start_byte': 0,
+                    'value': 0
+                },
+                'status': {
+                    'format': '<h',
+                    'start_byte': 4,
+                    'value': 0x00
+                },
+                'comm_failure': {
+                    'format': '<B',
+                    'start_byte': 6,
+                    'value': 0
+                },
+                'schedule': {
+                    # Stored as wchar_t[200]. Each wchar_t is 2 bytes, twice as big as standard char in Python
+                    'format': '400s',
+                    'start_byte': 7,
+                    'value': 'fake_schedule',
+                    'text_encoding': 'utf-16-le',
+                },
+                'testname': {
+                    # Stored as wchar_t[72]
+                    'format': '144s',
+                    'start_byte': 407,
+                    'value': 'fake_testname',
+                    'text_encoding': 'utf-16-le',
+                },
+                'exit_condition': {
+                    'format': '100s',
+                    'start_byte': 551,
+                    'value': 'none',
+                    'text_encoding': 'utf-8',
+                },
+                'step_and_cycle_format': {
+                    'format': '64s',
+                    'start_byte': 651,
+                    'value': 'none',
+                    'text_encoding': 'utf-8',
+                },
+                # Stored as wchar_t[72]
+                'barcode': {
+                    'format': '144s',
+                    'start_byte': 715,
+                    'value': 'none',
+                    'text_encoding': 'utf-16',
+                },
+                # Stored as wchar_t[72]
+                'can_config_name': {
+                    'format': '400s',
+                    'start_byte': 859,
+                    'value': 'none',
+                    'text_encoding': 'utf-16',
+                },
+                # Stored as wchar_t[72]
+                'smb_config_name': {
+                    'format': '400s',
+                    'start_byte': 1259,
+                    'value': 'none',
+                    'text_encoding': 'utf-16',
+                },
+                'master_channel': {
+                    'format': '<H',
+                    'start_byte': 1659,
+                    'value': 0,
+                },
+                'test_time_s': {
+                    'format': '<d',
+                    'start_byte': 1661,
+                    'value': 0,
+                },
+                'step_time_s': {
+                    'format': '<d',
+                    'start_byte': 1669,
+                    'value': 0,
+                },
+                'voltage_v': {
+                    'format': '<f',
+                    'start_byte': 1677,
+                    'value': 0,
+                },
+                'current_a': {
+                    'format': '<f',
+                    'start_byte': 1681,
+                    'value': 0,
+                },
+                'power_w': {
+                    'format': '<f',
+                    'start_byte': 1685,
+                    'value': 0,
+                },
+                'charge_capacity_ah': {
+                    'format': '<f',
+                    'start_byte': 1689,
+                    'value': 0,
+                },
+                'discharge_capacity_ah': {
+                    'format': '<f',
+                    'start_byte': 1693,
+                    'value': 0,
+                },
+                'charge_energy_wh': {
+                    'format': '<f',
+                    'start_byte': 1697,
+                    'value': 0,
+                },
+                'discharge_energy_wh': {
+                    'format': '<f',
+                    'start_byte': 1701,
+                    'value': 0,
+                },
+                'internal_resistance_ohm': {
+                    'format': '<f',
+                    'start_byte': 1705,
+                    'value': 0,
+                },
+                'dvdt_vbys': {
+                    'format': '<f',
+                    'start_byte': 1709,
+                    'value': 0,
+                },
+                'acr_ohm': {
+                    'format': '<f',
+                    'start_byte': 1713,
+                    'value': 0,
+                },
+                'aci_ohm': {
+                    'format': '<f',
+                    'start_byte': 1717,
+                    'value': 0,
+                },
+                'aci_phase_degrees': {
+                    'format': '<f',
+                    'start_byte': 1721,
+                    'value': 0,
+                },
+                'aux_voltage_count': {
+                    'format': '<H',
+                    'start_byte': 1725,
+                    'value': 0,
+                },
+                'aux_temperature_count': {
+                    'format': '<H',
+                    'start_byte': 1727,
+                    'value': 0,
+                },
+                'aux_pressure_count': {
+                    'format': '<H',
+                    'start_byte': 1729,
+                    'value': 0,
+                },
+                'aux_external_count': {
+                    'format': '<H',
+                    'start_byte': 1731,
+                    'value': 0,
+                },
+                'aux_flow_count': {
+                    'format': '<H',
+                    'start_byte': 1733,
+                    'value': 0,
+                },
+                'aux_ao_count': {
+                    'format': '<H',
+                    'start_byte': 1735,
+                    'value': 0,
+                },
+                'aux_di_count': {
+                    'format': '<H',
+                    'start_byte': 1737,
+                    'value': 0,
+                },
+                'aux_do_count': {
+                    'format': '<H',
+                    'start_byte': 1739,
+                    'value': 0,
+                },
+                'aux_humidity_count': {
+                    'format': '<H',
+                    'start_byte': 1741,
+                    'value': 0,
+                },
+                'aux_safety_count': {
+                    'format': '<H',
+                    'start_byte': 1743,
+                    'value': 0,
+                },
+                'aux_ph_count': {
+                    'format': '<H',
+                    'start_byte': 1745,
+                    'value': 0,
+                },
+                'aux_density_count': {
+                    'format': '<H',
+                    'start_byte': 1747,
+                    'value': 0,
+                },
+                'bms_count': {
+                    'format': '<H',
+                    'start_byte': 1749,
+                    'value': 0,
+                },
+                'smb_count': {
+                    'format': '<H',
+                    'start_byte': 1751,
+                    'value': 0,
+                },
+            }
+
+            # List of staus codes. Each index in the corresponding status code.
+            status_code_dict = {
+                0: 'Idle',
+                1: 'Transition',
+                2: 'Charge',
+                3: 'Discharge',
+                4: 'Rest',
+                5: 'Wait',
+                6: 'External Charge',
+                7: 'Calibration',
+                8: 'Unsafe',
+                9: 'Pulse',
+                10: 'Internal Resistance',
+                11: 'AC Impedance',
+                12: 'ACI Cell',
+                13: 'Test Settings',
+                14: 'Error',
+                15: 'Finished',
+                16: 'Volt Meter',
+                17: 'Waiting for ACS',
+                18: 'Pause',
+                19: 'Empty',
+                20: 'Idle from MCU',
+                21: 'Start',
+                22: 'Running',
+                23: 'Step Transfer',
+                24: 'Resume',
+                25: 'Go Pause',
+                26: 'Go Stop',
+                27: 'Go Next Step',
+                28: 'Online Update',
+                29: 'DAQ Memory Unsafe',
+                30: 'ACR'
+            }
+
+            @classmethod
+            def unpack(cls, msg_bin: bytearray) -> dict:
+                """
+                Unpack the info for all channels.
+                For each channel, it is the same as the parent method, but uses aux counts to unpack aux readings
+
+                Parameters
+                ----------
+                msg_bin : bytearry
+                    The message to unpack.
+
+                Returns
+                -------
+                msg_dicts : list
+                    The list of the messages with items decoded into a dictionary
+                """
+                msg_dicts = []
+
+                i = 0
+                while (i+1)*cls.msg_length < len(msg_bin):
+                    msg_dict = super().unpackByTemplates(
+                        msg_bin[i*cls.msg_length:(i+1)*cls.msg_length], [cls.msg_specific_template])
+                    if msg_dict:
+                        msg_dict = cls.aux_readings_parser(
+                            msg_dict, msg_bin, starting_aux_idx=1753+i*cls.msg_length)
+                        msg_dict['status'] = cls.status_code_dict[msg_dict['status']]
+                        msg_dicts.append(msg_dict)
+                    i += 1
+
+                return msg_dicts
+
+            @classmethod
+            def pack(cls, msg_values={}) -> bytearray:
+                """
+                Same as parent method.
+
+                Parameters
+                ----------
+                msg_values : dict
+                    A dictionary detailing which default values in the message temple should be 
+                    updated.
+
+                Returns
+                -------
+                msg : bytearray
+                    Packed response message.
+                """
+                # TODO : Modify so that we can aux values can be packed.
+                msg_bin = super().pack(msg_values)
+                return msg_bin
+
+            @classmethod
+            def aux_readings_parser(cls, msg_dict: dict, msg_bin: bytearray, starting_aux_idx=1753):
                 """
                 Parses the auxiliary readings in msg_bin based on the aux readings
                 counts in msg_dict. Aux readings are then added as items to the msg_dict. 
