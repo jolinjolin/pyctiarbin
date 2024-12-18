@@ -18,7 +18,7 @@ ARBIN_SPOOFER = ArbinSpoofer(SPOOFER_CONFIG_DICT)
 ARBIN_SPOOFER.start()
 
 
-@pytest.mark.channel_interface
+@pytest.mark.channels_interface
 def test_read_channel_status():
     """
     Test that sending the channel info message works correctly.
