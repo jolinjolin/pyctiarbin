@@ -91,6 +91,43 @@ class CyclerInterface:
 
         return channel_info_msg_rx_dict
 
+    def read_all_channels_status(self) -> dict:
+        """
+        Reads the statuses of all channels.
+
+        Returns
+        -------
+        channel_common_info_msg_rx_dict : dict
+            A dictionary of the cycler data that is common for all channels. Returns None if there is an issue.
+        channel_info_msg_rx_dicts : list
+            A list of dictionaries detailing the statuses of all channels. Returns None if there is an issue.
+        """
+        channel_common_info_msg_rx_dict = {}
+        channel_info_msg_rx_dicts = []
+
+        # channel must be 0 (subtract one from the channel must be -1) to retrieve info of all channels at once.
+        # See THIRD_PARTY_GET_CHANNELS_INFO/THIRD_PARTY_GET_CHANNELS_INFO_FEEDBACK in Arbin Docs for more info.
+        channel = 0
+
+        try:
+            channel_info_msg_tx = Msg.ChannelsCommonInfo.Client.pack(
+                {'channel': (channel-1)})
+            response_msg_bin = self._send_receive_msg(
+                channel_info_msg_tx)
+
+            if response_msg_bin and len(
+                    response_msg_bin) >= Msg.ChannelsCommonInfo.Server.msg_length:
+                channel_common_info_msg_rx_dict = Msg.ChannelsCommonInfo.Server.unpack(
+                    response_msg_bin)
+                channel_info_msg_rx_dicts = Msg.ChannelsInfo.Server.unpack(
+                    response_msg_bin[Msg.ChannelsCommonInfo.Server.msg_length:])
+        except Exception as e:
+            logger.error(
+                f'Error reading the statues of all channels', exc_info=True)
+            logger.error(e)
+
+        return channel_common_info_msg_rx_dict, channel_info_msg_rx_dicts
+
     def _send_receive_msg(self, tx_msg):
         """
         Sends the passed message and receives the response.

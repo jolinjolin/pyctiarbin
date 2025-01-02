@@ -856,7 +856,7 @@ class Msg:
         '''
         Message for getting info of all channels from cycler.
         ChannelsCommonInfo is used along with ChannelsInfo, thus we don't
-        nedd Client or pack for Server in ChannelsInfo.
+        need Client class in ChannelsInfo.
         See THIRD_PARTY_GET_CHANNELS_INFO/THIRD_PARTY_GET_CHANNELS_INFO_FEEDBACK 
         in Arbin docs for more info.
         '''
