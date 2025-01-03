@@ -3,6 +3,7 @@ import logging
 import struct
 import dotenv
 import os
+from typing import Dict, List, Tuple, Any
 from pydantic import BaseModel
 from .messages import Msg
 from .messages import MessageABC
@@ -91,16 +92,17 @@ class CyclerInterface:
 
         return channel_info_msg_rx_dict
 
-    def read_all_channels_status(self) -> dict:
+    def read_all_channels_status(self) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """
         Reads the statuses of all channels.
 
         Returns
         -------
-        channel_common_info_msg_rx_dict : dict
-            A dictionary of the cycler data that is common for all channels. Returns None if there is an issue.
-        channel_info_msg_rx_dicts : list
-            A list of dictionaries detailing the statuses of all channels. Returns None if there is an issue.
+        Tuple[dict, list]
+            A tuple containing:
+                - A dictionary of the cycler data that is common for all channels.
+                - A list of dictionaries detailing the statuses of all channels.
+            Returns None if there is an issue.
         """
         channel_common_info_msg_rx_dict = {}
         channel_info_msg_rx_dicts = []
