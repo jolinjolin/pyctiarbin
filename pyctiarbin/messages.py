@@ -695,7 +695,7 @@ class Msg:
                 return msg_bin
 
             @classmethod
-            def aux_readings_parser(cls, msg_dict: dict, msg_bin: bytearray, starting_aux_idx=1777):
+            def aux_readings_parser(cls, msg_dict: dict, msg_bin: bytearray, starting_aux_idx=1777) -> dict:
                 """
                 Parses the auxiliary readings in msg_bin based on the aux readings
                 counts in msg_dict. Aux readings are then added as items to the msg_dict. 
@@ -1115,7 +1115,7 @@ class Msg:
             }
 
             @classmethod
-            def unpack(cls, msg_bin: bytearray) -> dict:
+            def unpack(cls, msg_bin: bytearray) -> list:
                 """
                 Unpack the info for all channels.
                 For each channel, it is the same as the parent method, but uses aux counts to unpack aux readings
@@ -1166,7 +1166,7 @@ class Msg:
                 return msg_bin
 
             @classmethod
-            def aux_readings_parser(cls, msg_dict: dict, msg_bin: bytearray, starting_aux_idx=1753):
+            def aux_readings_parser(cls, msg_dict: dict, msg_bin: bytearray, starting_aux_idx=1753) -> dict:
                 """
                 Parses the auxiliary readings in msg_bin based on the aux readings
                 counts in msg_dict. Aux readings are then added as items to the msg_dict. 
